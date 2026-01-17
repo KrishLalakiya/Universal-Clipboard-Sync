@@ -1,6 +1,6 @@
 // apps/desktop/main.js
-// COMMIT 12: WebRTC signaling via signaling server (NO clipboard)
-const WebSocket = require("ws");
+// COMMIT 13: Send test message over WebRTC data channel
+
 const SignalingClient = require("./network/SignalingClient");
 const WebRTCManager = require("./network/WebRTCManager");
 
@@ -13,64 +13,48 @@ if (!DEVICE_ID) {
 
 console.log("Desktop app started for device:", DEVICE_ID);
 
-let webrtcManager = null;
-
-// 2️⃣ Create signaling client
+// 1️⃣ Create signaling client
 const signalingClient = new SignalingClient({
   deviceId: DEVICE_ID,
   serverUrl: "ws://localhost:8080",
   onSignal: (data) => {
     console.log("Received signaling message:", data);
-
-    // Forward signaling payloads to WebRTC
-    if (webrtcManager) {
-      webrtcManager.handleSignal(data.from, data.payload);
-    }
+    webrtcManager.handleSignal(data.from, data.payload);
   }
 });
 
-// 3️⃣ Create WebRTCManager AFTER signaling client exists
-webrtcManager = new WebRTCManager({
+// 2️⃣ Create WebRTC manager
+const webrtcManager = new WebRTCManager({
   deviceId: DEVICE_ID,
   signalingClient
 });
 
+// 3️⃣ Handle incoming WebRTC messages
+webrtcManager.onMessage = (message) => {
+  console.log("📩 Received WebRTC message:", message);
+};
+
 // 4️⃣ Connect to signaling server
 signalingClient.connect();
 
-// 5️⃣ Only ONE device starts WebRTC (offer creator)
+// 5️⃣ ONLY deviceA creates the WebRTC OFFER
 if (DEVICE_ID === "deviceA") {
   setTimeout(() => {
-    console.log("Starting WebRTC offer to deviceB");
+    console.log("🚀 Starting WebRTC offer to deviceB");
     webrtcManager.createPeerConnection("deviceB");
   }, 2000);
 }
 
-// // Connect to signaling server
-// const socket = new WebSocket("ws://localhost:8080");
+// 6️⃣ Send test message AFTER data channel is open
+if (DEVICE_ID === "deviceA") {
+  setTimeout(() => {
+    console.log("🚀 Sending test message over WebRTC");
 
-// socket.on("open", () => {
-//   console.log("Connected to signaling server");
-
-//   // Register device
-//   socket.send(
-//     JSON.stringify({
-//       type: "REGISTER",
-//       deviceId: DEVICE_ID
-//     })
-//   );
-
-//   console.log("REGISTER sent for", DEVICE_ID);
-// });
-
-// socket.on("message", (data) => {
-//   console.log("Message from signaling server:", data.toString());
-// });
-
-// socket.on("close", () => {
-//   console.log("Disconnected from signaling server");
-// });
-
-// socket.on("error", (err) => {
-//   console.error("WebSocket error:", err.message);
-// });
+    webrtcManager.sendMessage(
+      JSON.stringify({
+        type: "TEST",
+        message: "hello from deviceA over WebRTC"
+      })
+    );
+  }, 5000);
+}
