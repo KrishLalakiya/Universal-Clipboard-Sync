@@ -1,5 +1,8 @@
 // apps/desktop/main.js
 
+const ClipboardWatcher = require("./clipboard/ClipboardWatcher");
+
+
 const SyncEngine = require("./core/SyncEngine");
 const WebRTCManager = require("./network/WebRTCManager");
 const SignalingClient = require("./network/SignalingClient");
@@ -43,5 +46,15 @@ webrtcManager.onMessage = (message) => {
 };
 
 signalingClient.connect();
+
+// Start clipboard watching
+const clipboardWatcher = new ClipboardWatcher((text) => {
+  console.log("Local clipboard changed:", text);
+
+  syncEngine.onLocalClipboardChange("text", text);
+});
+
+clipboardWatcher.start();
+
 
 console.log("Desktop app started for device:", DEVICE_ID);
