@@ -21,20 +21,35 @@ class SignalingClient {
         JSON.stringify({
           type: "REGISTER",
           deviceId: this.deviceId
-        })
-      );
+        }));
     });
+    this.socket.on("message", (data) => {
+      const message = JSON.parse(data.toString());
 
-    this.socket.on("message", (message) => {
-      const data = JSON.parse(message);
+      console.log("SIGNALING MESSAGE RECEIVED:", message);
 
-      if (data.type === "SIGNAL") {
-        console.log("Received signaling message:", data);
-        if (this.onSignal) {
-          this.onSignal(data);
-        }
+      // Forward peer-to-peer signaling messages
+      if (message.type === "SIGNAL" && this.onSignal) {
+        this.onSignal({
+          from: message.from,
+          payload: message.payload
+        });
+      } else {
+        console.log("Non-signal message from server:", message);
       }
+
     });
+
+    // this.socket.on("message", (message) => {
+    //   const data = JSON.parse(message);
+
+    //   if (data.type === "SIGNAL") {
+    //     console.log("Received signaling message:", data);
+    //     if (this.onSignal) {
+    //       this.onSignal(data);
+    //     }
+    //   }
+    // });
 
     this.socket.on("close", () => {
       console.log("Disconnected from signaling server");
@@ -51,11 +66,13 @@ class SignalingClient {
     this.socket.send(
       JSON.stringify({
         type: "SIGNAL",
-        targetDeviceId,
-        payload
+        from: this.deviceId,      // 🔑 who is sending
+        to: targetDeviceId,       // 🔑 who should receive
+        payload                   // OFFER / ANSWER / ICE
       })
     );
   }
+
 }
 
 module.exports = SignalingClient;

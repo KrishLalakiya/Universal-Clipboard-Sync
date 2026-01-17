@@ -34,11 +34,11 @@ class WebRTCManager {
     };
 
     this.dataChannel.onmessage = (event) => {
-        console.log("Received P2P message:", event.data);
+      console.log("Received P2P message:", event.data);
 
-        if (this.onMessage) {
-            this.onMessage(event.data);
-        }
+      if (this.onMessage) {
+        this.onMessage(event.data);
+      }
     };
 
 
@@ -85,10 +85,13 @@ class WebRTCManager {
       this.dataChannel = event.channel;
 
       this.dataChannel.onmessage = (e) => {
-        const message = JSON.parse(event.data);
+        const message = JSON.parse(e.data);
 
-        if (message.type === "CLIPBOARD_ITEM") {
-            syncEngine.onRemoteClipboardItem(message.payload);
+        // if (message.type === "CLIPBOARD_ITEM") {
+        //     syncEngine.onRemoteClipboardItem(message.payload);
+        // }
+        if (this.onMessage) {
+          this.onMessage(e.data);
         }
       };
     };

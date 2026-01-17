@@ -26,7 +26,7 @@ wss.on("connection", (ws) => {
 
     // Relay signaling messages (offer / answer / ICE)
     if (data.type === "SIGNAL") {
-      const targetSocket = clients.get(data.targetDeviceId);
+      const targetSocket = clients.get(data.to);
 
       if (targetSocket) {
         targetSocket.send(

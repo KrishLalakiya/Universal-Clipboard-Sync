@@ -1,64 +1,67 @@
 // apps/desktop/main.js
+// COMMIT 10: Signaling-only device registration
 
-const ClipboardWatcher = require("./clipboard/ClipboardWatcher");
-
-
-const SyncEngine = require("./core/SyncEngine");
-const WebRTCManager = require("./network/WebRTCManager");
+const WebSocket = require("ws");
 const SignalingClient = require("./network/SignalingClient");
 
 const DEVICE_ID = process.argv[2];
 
 if (!DEVICE_ID) {
-  console.error("Please pass device id");
+  console.error("Please pass device id (e.g. deviceA)");
   process.exit(1);
 }
 
-// Create Sync Engine
-const syncEngine = new SyncEngine(DEVICE_ID);
+console.log("Desktop app started for device:", DEVICE_ID);
 
-// Create Signaling Client
 const signalingClient = new SignalingClient({
   deviceId: DEVICE_ID,
   serverUrl: "ws://localhost:8080",
   onSignal: (data) => {
-    webrtcManager.handleSignal(data.from, data.payload);
+    console.log(
+      `Received SIGNAL from ${data.from}:`,
+      data.payload
+    );
   }
 });
 
-// Create WebRTC Manager
-const webrtcManager = new WebRTCManager({
-  deviceId: DEVICE_ID,
-  signalingClient
-});
-
-// 🔌 WIRING (THIS IS THE KEY PART)
-
-// When SyncEngine wants to send data
-syncEngine.sendToOnlineDevices = (item) => {
-  webrtcManager.sendMessage(JSON.stringify({type: "CLIPBOARD_ITEM",
-      payload: item}));
-  console.log("Pretending to send clipboard to peers:", item.content);
-};
-
-// When WebRTC receives data
-webrtcManager.onMessage = (message) => {
-  const item = JSON.parse(message);
-  syncEngine.onRemoteClipboardItem(item);
-};
-
 signalingClient.connect();
 
-// Start clipboard watching
-const clipboardWatcher = new ClipboardWatcher((text) => {
-  console.log("Local clipboard changed:", text);
 
-  syncEngine.onLocalClipboardChange("text", text);
-});
+if (DEVICE_ID === "deviceA") {
+  setTimeout(() => {
+    console.log("Sending PING to deviceB");
 
-clipboardWatcher.start();
+    signalingClient.sendSignal("deviceB", {
+      type: "PING",
+      message: "hello from deviceA"
+    });
+  }, 2000);
+}
+// // Connect to signaling server
+// const socket = new WebSocket("ws://localhost:8080");
 
+// socket.on("open", () => {
+//   console.log("Connected to signaling server");
 
-console.log("Desktop app started for device:", DEVICE_ID);
-syncEngine.updateDeviceStatus("deviceB", true)
+//   // Register device
+//   socket.send(
+//     JSON.stringify({
+//       type: "REGISTER",
+//       deviceId: DEVICE_ID
+//     })
+//   );
 
+//   console.log("REGISTER sent for", DEVICE_ID);
+// });
+
+// socket.on("message", (data) => {
+//   console.log("Message from signaling server:", data.toString());
+// });
+
+// socket.on("close", () => {
+//   console.log("Disconnected from signaling server");
+// });
+
+// socket.on("error", (err) => {
+//   console.error("WebSocket error:", err.message);
+// });
