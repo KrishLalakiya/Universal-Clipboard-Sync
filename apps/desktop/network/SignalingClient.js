@@ -1,13 +1,11 @@
-// apps/desktop/network/SignalingClient.js
-
 const WebSocket = require("ws");
-// const WebRTCManager = require("./network/WebRTCManager");
 
 class SignalingClient {
-  constructor({ deviceId, serverUrl, onSignal }) {
+  constructor({ deviceId, serverUrl, onSignal, onDeviceList }) {
     this.deviceId = deviceId;
     this.serverUrl = serverUrl;
     this.onSignal = onSignal;
+    this.onDeviceList = onDeviceList;
     this.socket = null;
   }
 
@@ -17,41 +15,27 @@ class SignalingClient {
     this.socket.on("open", () => {
       console.log("Connected to signaling server");
 
-      // Register device
       this.socket.send(
         JSON.stringify({
           type: "REGISTER",
           deviceId: this.deviceId
-        }));
-        console.log(`REGISTER sent for ${this.deviceId}`);
+        })
+      );
+
+      console.log("REGISTER sent for", this.deviceId);
     });
+
     this.socket.on("message", (data) => {
       const message = JSON.parse(data.toString());
 
-      console.log("SIGNALING MESSAGE RECEIVED:", message);
-
-      // Forward peer-to-peer signaling messages
       if (message.type === "SIGNAL" && this.onSignal) {
-        this.onSignal({
-          from: message.from,
-          payload: message.payload
-        });
-      } else {
-        console.log("Non-signal message from server:", message);
+        this.onSignal(message);
       }
 
+      if (message.type === "DEVICE_LIST" && this.onDeviceList) {
+        this.onDeviceList(message.devices);
+      }
     });
-
-    // this.socket.on("message", (message) => {
-    //   const data = JSON.parse(message);
-
-    //   if (data.type === "SIGNAL") {
-    //     console.log("Received signaling message:", data);
-    //     if (this.onSignal) {
-    //       this.onSignal(data);
-    //     }
-    //   }
-    // });
 
     this.socket.on("close", () => {
       console.log("Disconnected from signaling server");
@@ -62,19 +46,16 @@ class SignalingClient {
     });
   }
 
-  sendSignal(targetDeviceId, payload) {
-    if (!this.socket) return;
-
+  sendSignal(to, payload) {
     this.socket.send(
       JSON.stringify({
         type: "SIGNAL",
-        from: this.deviceId,      // 🔑 who is sending
-        to: targetDeviceId,       // 🔑 who should receive
-        payload                   // OFFER / ANSWER / ICE
+        from: this.deviceId,
+        to,
+        payload
       })
     );
   }
-
 }
 
 module.exports = SignalingClient;
