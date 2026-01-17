@@ -1,6 +1,7 @@
 // apps/desktop/network/SignalingClient.js
 
 const WebSocket = require("ws");
+// const WebRTCManager = require("./network/WebRTCManager");
 
 class SignalingClient {
   constructor({ deviceId, serverUrl, onSignal }) {
@@ -22,6 +23,7 @@ class SignalingClient {
           type: "REGISTER",
           deviceId: this.deviceId
         }));
+        console.log(`REGISTER sent for ${this.deviceId}`);
     });
     this.socket.on("message", (data) => {
       const message = JSON.parse(data.toString());
