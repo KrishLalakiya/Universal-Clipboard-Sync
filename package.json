@@ -20,5 +20,6 @@
   "homepage": "https://github.com/KrishLalakiya/Universal-Clipboard-Sync#readme",
   "dependencies": {
     "ws": "^8.19.0"
-  }
+  },
+  "devDependencies": {}
 }
