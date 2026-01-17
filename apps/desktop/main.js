@@ -36,7 +36,8 @@ const webrtcManager = new WebRTCManager({
 
 // When SyncEngine wants to send data
 syncEngine.sendToOnlineDevices = (item) => {
-  webrtcManager.sendMessage(JSON.stringify(item));
+  webrtcManager.sendMessage(JSON.stringify({type: "CLIPBOARD_ITEM",
+      payload: item}));
   console.log("Pretending to send clipboard to peers:", item.content);
 };
 

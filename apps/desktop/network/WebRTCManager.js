@@ -85,7 +85,11 @@ class WebRTCManager {
       this.dataChannel = event.channel;
 
       this.dataChannel.onmessage = (e) => {
-        console.log("Received P2P message:", e.data);
+        const message = JSON.parse(event.data);
+
+        if (message.type === "CLIPBOARD_ITEM") {
+            syncEngine.onRemoteClipboardItem(message.payload);
+        }
       };
     };
 
