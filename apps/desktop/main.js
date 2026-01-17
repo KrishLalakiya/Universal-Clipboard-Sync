@@ -37,6 +37,7 @@ const webrtcManager = new WebRTCManager({
 // When SyncEngine wants to send data
 syncEngine.sendToOnlineDevices = (item) => {
   webrtcManager.sendMessage(JSON.stringify(item));
+  console.log("Pretending to send clipboard to peers:", item.content);
 };
 
 // When WebRTC receives data
@@ -58,3 +59,5 @@ clipboardWatcher.start();
 
 
 console.log("Desktop app started for device:", DEVICE_ID);
+syncEngine.updateDeviceStatus("deviceB", true)
+
