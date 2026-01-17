@@ -14,6 +14,9 @@ class SyncEngine {
 
     // paired devices status (deviceId -> online/offline)
     this.devices = {};
+
+    this.lastRemoteUpdateTimestamp = 0;
+
   }
 
   /**
@@ -100,27 +103,42 @@ class SyncEngine {
    * Called when a clipboard item is received from another device
    * Conflict handling: Last Write Wins
   */
+
   onRemoteClipboardItem(item) {
-    const lastItem = this.history.length > 0 ? this.history[this.history.length - 1] : null;
+    // 🔒 Mark time of remote update (for echo prevention)
+    this.lastRemoteUpdateTimestamp = item.timestamp;
 
-    // If no history, accept immediately
-    if (!lastItem) {
-      this.history.push(item);
-      console.log("Accepted remote clipboard item (no conflict):", item);
-      return;
-    }
+    const lastItem = this.history[this.history.length - 1];
 
-    // Last Write Wins based on timestamp
-    if (item.timestamp > lastItem.timestamp) {
+    // Last-write-wins
+    if (!lastItem || item.timestamp > lastItem.timestamp) {
       this.history.push(item);
-      console.log("Accepted remote clipboard item (newer):", item);
-    } else {
-      console.log("Ignored remote clipboard item (older):", item);
+      console.log("📋 Applied remote clipboard:", item.content);
     }
   }
 
-
 }
+//   onRemoteClipboardItem(item) {
+//     const lastItem = this.history.length > 0 ? this.history[this.history.length - 1] : null;
+
+//     // If no history, accept immediately
+//     if (!lastItem) {
+//       this.history.push(item);
+//       console.log("Accepted remote clipboard item (no conflict):", item);
+//       return;
+//     }
+
+//     // Last Write Wins based on timestamp
+//     if (item.timestamp > lastItem.timestamp) {
+//       this.history.push(item);
+//       console.log("Accepted remote clipboard item (newer):", item);
+//     } else {
+//       console.log("Ignored remote clipboard item (older):", item);
+//     }
+//   }
+
+
+// }
 
 
 module.exports = SyncEngine;

@@ -86,6 +86,11 @@ if (DEVICE_ID === "deviceA") {
 // 8️⃣ Start clipboard watcher
 //
 const clipboardWatcher = new ClipboardWatcher((text) => {
+  // 🔒 Commit 15: ignore clipboard changes caused by remote sync
+  if (Date.now() - syncEngine.lastRemoteUpdateTimestamp < 500) {
+    return;
+  }
+
   console.log(`📋 Local clipboard changed on ${DEVICE_ID}:`, text);
   syncEngine.onLocalClipboardChange("text", text);
 });
