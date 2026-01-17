@@ -34,8 +34,13 @@ class WebRTCManager {
     };
 
     this.dataChannel.onmessage = (event) => {
-      console.log("Received P2P message:", event.data);
-    };
+  console.log("Received P2P message:", event.data);
+
+  if (this.onMessage) {
+    this.onMessage(event.data);
+  }
+};
+
 
     // Create offer
     const offer = await this.peerConnection.createOffer();
