@@ -1,0 +1,61 @@
+// apps/desktop/network/SignalingClient.js
+
+const WebSocket = require("ws");
+
+class SignalingClient {
+  constructor({ deviceId, serverUrl, onSignal }) {
+    this.deviceId = deviceId;
+    this.serverUrl = serverUrl;
+    this.onSignal = onSignal;
+    this.socket = null;
+  }
+
+  connect() {
+    this.socket = new WebSocket(this.serverUrl);
+
+    this.socket.on("open", () => {
+      console.log("Connected to signaling server");
+
+      // Register device
+      this.socket.send(
+        JSON.stringify({
+          type: "REGISTER",
+          deviceId: this.deviceId
+        })
+      );
+    });
+
+    this.socket.on("message", (message) => {
+      const data = JSON.parse(message);
+
+      if (data.type === "SIGNAL") {
+        console.log("Received signaling message:", data);
+        if (this.onSignal) {
+          this.onSignal(data);
+        }
+      }
+    });
+
+    this.socket.on("close", () => {
+      console.log("Disconnected from signaling server");
+    });
+
+    this.socket.on("error", (err) => {
+      console.error("Signaling error:", err.message);
+    });
+  }
+
+  sendSignal(targetDeviceId, payload) {
+    if (!this.socket) return;
+
+    this.socket.send(
+      JSON.stringify({
+        type: "SIGNAL",
+        targetDeviceId,
+        payload
+      })
+    );
+  }
+}
+
+module.exports = SignalingClient;

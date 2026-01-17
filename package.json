@@ -1,0 +1,24 @@
+{
+  "name": "universal-clipboard-sync",
+  "version": "1.0.0",
+  "description": "A cross-platform, peer-to-peer clipboard synchronization system that works across different operating systems and networks.",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/KrishLalakiya/Universal-Clipboard-Sync.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/KrishLalakiya/Universal-Clipboard-Sync/issues"
+  },
+  "homepage": "https://github.com/KrishLalakiya/Universal-Clipboard-Sync#readme",
+  "dependencies": {
+    "ws": "^8.19.0"
+  }
+}
