@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Mobile Sync</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+        body { font-family: sans-serif; text-align: center; padding: 20px; }
+        textarea { width: 100%; height: 100px; margin-top: 10px; }
+        .status { padding: 10px; background: #eee; border-radius: 4px; }
+    </style>
+</head>
+<body>
+    <h2>Mobile Clipboard</h2>
+    <div id="status" class="status">Disconnected</div>
+    
+    <div id="join-screen">
+        <input type="text" id="pin" placeholder="Enter PIN from Desktop" />
+        <button onclick="join()">Join</button>
+    </div>
+
+    <div id="sync-screen" style="display:none;">
+        <textarea id="clip-area" placeholder="Copy/Paste here to sync"></textarea>
+        <p>Text copied here sends to Desktop.</p>
+        <p>Text copied on Desktop appears here.</p>
+    </div>
+
+    <script>
+        let ws;
+        
+        function join() {
+            const pin = document.getElementById('pin').value;
+            // Connect to YOUR computer's local IP (not localhost, because phone is external)
+            // Replace with your actual local IP, e.g., 192.168.1.5:8080
+            const host = window.location.host; 
+            ws = new WebSocket('ws://' + host);
+
+            ws.onopen = () => {
+                ws.send(JSON.stringify({ type: 'JOIN_ROOM', payload: { pin, deviceId: 'Mobile' } }));
+                document.getElementById('status').innerText = "Connected!";
+                document.getElementById('join-screen').style.display = 'none';
+                document.getElementById('sync-screen').style.display = 'block';
+            };
+
+            ws.onmessage = (event) => {
+                const msg = JSON.parse(event.data);
+                if(msg.type === 'CLIPBOARD_PUSH') {
+                    document.getElementById('clip-area').value = msg.payload;
+                }
+            };
+            
+            const area = document.getElementById('clip-area');
+            area.addEventListener('input', () => {
+                ws.send(JSON.stringify({ type: 'CLIPBOARD_PUSH', payload: area.value }));
+            });
+        }
+        
+        // Auto-join if PIN is in URL (e.g., ?pin=1234)
+        const urlParams = new URLSearchParams(window.location.search);
+        if(urlParams.has('pin')) {
+            document.getElementById('pin').value = urlParams.get('pin');
+            join();
+        }
+    </script>
+</body>
+</html>

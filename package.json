@@ -2,9 +2,9 @@
   "name": "universal-clipboard-sync",
   "version": "1.0.0",
   "description": "A cross-platform, peer-to-peer clipboard synchronization system that works across different operating systems and networks.",
-  "main": "index.js",
+  "main": "electron/main.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "electron ."
   },
   "repository": {
     "type": "git",
@@ -19,18 +19,13 @@
   },
   "homepage": "https://github.com/KrishLalakiya/Universal-Clipboard-Sync#readme",
   "dependencies": {
-    "clipboardy": "^5.0.2",
+    "clipboardy": "^2.3.0",
+    "qrcode": "^1.5.4",
+    "uuid": "^13.0.0",
     "wrtc": "^0.4.7",
     "ws": "^8.19.0"
   },
   "devDependencies": {
     "electron": "^40.0.0"
-  },
-  
-  "main": "electron/main.js",
-  "scripts": {
-    "start": "electron ."
   }
-
-
 }

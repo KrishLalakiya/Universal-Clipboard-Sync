@@ -57,5 +57,34 @@
       });
     });
   </script>
+
+
+  <div style="background: #f5f5f5; padding: 10px; margin-bottom: 20px;">
+    <h3>Connection</h3>
+    <input type="text" id="pinInput" placeholder="Enter PIN (e.g. 1234)" />
+    <button onclick="connectToRoom()">Connect</button>
+    <button onclick="showQR()">Show QR</button>
+    <div id="qr-container" style="margin-top:10px;"></div>
+</div>
+
+<script>
+    // ... existing ipcRenderer requires ...
+
+    function connectToRoom() {
+        const pin = document.getElementById('pinInput').value;
+        if(pin) {
+            ipcRenderer.send("ui:connect", pin);
+        }
+    }
+
+    async function showQR() {
+        const pin = document.getElementById('pinInput').value || "1234"; // Default or random
+        const qrData = JSON.stringify({ pin: pin, action: 'join' });
+        
+        // Use invoke for async response
+        const url = await ipcRenderer.invoke("ui:generate-qr", qrData);
+        document.getElementById('qr-container').innerHTML = `<img src="${url}" width="150"/>`;
+    }
+</script>
 </body>
 </html>
