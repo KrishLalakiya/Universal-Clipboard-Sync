@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Universal Clipboard Sync</title>
+  <style>
+    body { font-family: Arial, sans-serif; padding: 16px; }
+    h2 { margin-top: 0; }
+    ul { padding-left: 20px; }
+    li { cursor: pointer; }
+  </style>
+</head>
+<body>
+  <h2>Universal Clipboard Sync</h2>
+  <p>Status: <b>Running</b></p>
+
+  <h3>Connected Devices</h3>
+  <ul id="devices"></ul>
+
+  <h3>Clipboard History</h3>
+  <ul id="history"></ul>
+
+  <script>
+    const { ipcRenderer } = require("electron");
+
+    ipcRenderer.on("devices:update", (_, devices) => {
+      const ul = document.getElementById("devices");
+      ul.innerHTML = "";
+
+      if (devices.length === 0) {
+        ul.innerHTML = "<li>No devices connected</li>";
+        return;
+      }
+
+      devices.forEach(d => {
+        const li = document.createElement("li");
+        li.textContent = d;
+        ul.appendChild(li);
+      });
+    });
+
+    ipcRenderer.on("history:update", (_, history) => {
+      const ul = document.getElementById("history");
+      ul.innerHTML = "";
+
+      if (history.length === 0) {
+        ul.innerHTML = "<li>No clipboard history</li>";
+        return;
+      }
+
+      history.slice().reverse().forEach(item => {
+        const li = document.createElement("li");
+        li.textContent = item.content;
+        li.onclick = () => {
+          ipcRenderer.send("history:restore", item.content);
+        };
+        ul.appendChild(li);
+      });
+    });
+  </script>
+</body>
+</html>

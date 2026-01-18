@@ -2,25 +2,70 @@ const SignalingClient = require("./network/SignalingClient");
 const WebRTCManager = require("./network/WebRTCManager");
 const SyncEngine = require("./core/SyncEngine");
 const ClipboardWatcher = require("./clipboard/ClipboardWatcher");
+const os = require("os");
+
+const CLIPBOARD_HISTORY_LIMIT = 20;
+let clipboardHistory = [];
+let deviceStatusMap = {};
 
 const DEVICE_ID =
   process.env.DEVICE_ID ||
   process.argv[2] ||
-  require("os").hostname();
-
-
-if (!DEVICE_ID) {
-  console.error("Please pass device id");
-  process.exit(1);
-}
+  os.hostname();
 
 console.log("Desktop app started for device:", DEVICE_ID);
 
-// 1️⃣ State
+/* =========================
+   DEVICE STATUS
+========================= */
+function updateDeviceStatus(deviceId, status) {
+  deviceStatusMap[deviceId] = {
+    status,
+    lastSeen: Date.now()
+  };
+
+  if (process.send) {
+    process.send({
+      type: "DEVICE_STATUS",
+      devices: deviceStatusMap
+    });
+  }
+}
+
+/* =========================
+   CLIPBOARD HISTORY
+========================= */
+function addToHistory(item) {
+  if (
+    clipboardHistory.length > 0 &&
+    clipboardHistory[clipboardHistory.length - 1].content === item.content
+  ) {
+    return;
+  }
+
+  clipboardHistory.push(item);
+
+  if (clipboardHistory.length > CLIPBOARD_HISTORY_LIMIT) {
+    clipboardHistory.shift();
+  }
+
+  if (process.send) {
+    process.send({
+      type: "CLIPBOARD_HISTORY",
+      history: clipboardHistory
+    });
+  }
+}
+
+/* =========================
+   STATE
+========================= */
 const peers = new Map();
 const syncEngine = new SyncEngine(DEVICE_ID);
 
-// 2️⃣ Signaling client
+/* =========================
+   SIGNALING
+========================= */
 const signalingClient = new SignalingClient({
   deviceId: DEVICE_ID,
   serverUrl: "ws://localhost:8080",
@@ -33,68 +78,82 @@ const signalingClient = new SignalingClient({
   },
 
   onDeviceList: (devices) => {
-  console.log("📡 Online devices:", devices);
+    console.log("📡 Online devices:", devices);
 
-  // 🔔 Notify Electron window if running inside Electron
-  if (process.send) {
-    process.send({
-      type: "DEVICE_LIST",
-      devices
-    });
-  }
-
-  const online = new Set(devices);
-
-  // 1️⃣ REMOVE peers that went offline
-  for (const [deviceId, peer] of peers) {
-    if (!online.has(deviceId)) {
-      console.log("🧹 Removing offline peer:", deviceId);
-      try {
-        peer.dataChannel?.close();
-        peer.peerConnection?.close();
-      } catch (_) {}
-      peers.delete(deviceId);
+    if (process.send) {
+      process.send({ type: "DEVICE_LIST", devices });
     }
-  }
 
-  // 2️⃣ ADD peers that are newly online
-  devices.forEach((deviceId) => {
-    if (deviceId === DEVICE_ID) return;
-    if (peers.has(deviceId)) return;
+    const online = new Set(devices);
 
-    console.log("🔗 Creating WebRTC peer for", deviceId);
+    // 🔴 OFFLINE
+    for (const [deviceId, peer] of peers) {
+      if (!online.has(deviceId)) {
+        updateDeviceStatus(deviceId, "offline");
 
-    const peer = new WebRTCManager({
-      deviceId: DEVICE_ID,
-      signalingClient
-    });
+        try {
+          peer.dataChannel?.close();
+          peer.peerConnection?.close();
+        } catch (_) { }
 
-    peer.onMessage = (message) => {
-      const data = JSON.parse(message);
-      if (data.type === "CLIPBOARD_ITEM") {
-        console.log("📋 Clipboard received:", data.payload.content);
-        syncEngine.onRemoteClipboardItem(data.payload);
+        peers.delete(deviceId);
       }
-    };
-
-    peers.set(deviceId, peer);
-
-    // Deterministic initiator to avoid double offers
-    if (DEVICE_ID < deviceId) {
-      setTimeout(() => {
-        peer.createPeerConnection(deviceId);
-      }, 1000);
     }
-  });
-}
 
+    // 🟡 CONNECTING
+    devices.forEach((deviceId) => {
+      if (deviceId === DEVICE_ID) return;
+      if (peers.has(deviceId)) return;
+
+      updateDeviceStatus(deviceId, "connecting");
+
+      const peer = new WebRTCManager({
+        deviceId: DEVICE_ID,
+        signalingClient
+      });
+
+      peer.onMessage = (message) => {
+        const data = JSON.parse(message);
+
+        if (data.type === "CLIPBOARD_ITEM") {
+          syncEngine.onRemoteClipboardItem(data.payload);
+
+          addToHistory({
+            content: data.payload.content,
+            source: data.payload.sourceDeviceId,
+            timestamp: Date.now()
+          });
+        }
+      };
+
+      // 🟢 ONLINE
+      process.on("message", (msg) => {
+  if (msg.type === "PEER_ONLINE") {
+    updateDeviceStatus(msg.deviceId, "online");
+  }
 });
 
-// 3️⃣ SyncEngine → WebRTC (broadcast)
+
+
+
+      peers.set(deviceId, peer);
+
+      if (DEVICE_ID < deviceId) {
+        setTimeout(() => {
+          peer.createPeerConnection(deviceId);
+        }, 1000);
+      }
+    });
+  }
+});
+
+/* =========================
+   SYNC ENGINE → WEBRTC
+========================= */
 syncEngine.sendToOnlineDevices = (item) => {
   if (item.sourceDeviceId !== DEVICE_ID) return;
 
-  for (const [deviceId, peer] of peers) {
+  for (const peer of peers.values()) {
     if (peer.dataChannel?.readyState === "open") {
       peer.sendMessage(
         JSON.stringify({
@@ -106,16 +165,24 @@ syncEngine.sendToOnlineDevices = (item) => {
   }
 };
 
-
-// 4️⃣ Clipboard watcher
+/* =========================
+   CLIPBOARD WATCHER
+========================= */
 const clipboardWatcher = new ClipboardWatcher((text) => {
   if (Date.now() - syncEngine.lastRemoteUpdateTimestamp < 500) return;
 
-  console.log(`📋 Local clipboard changed on ${DEVICE_ID}:`, text);
   syncEngine.onLocalClipboardChange("text", text);
+
+  addToHistory({
+    content: text,
+    source: DEVICE_ID,
+    timestamp: Date.now()
+  });
 });
 
 clipboardWatcher.start();
 
-// 5️⃣ Connect
+/* =========================
+   CONNECT
+========================= */
 signalingClient.connect();

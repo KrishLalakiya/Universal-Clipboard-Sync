@@ -30,8 +30,17 @@ class WebRTCManager {
     this.dataChannel = this.peerConnection.createDataChannel("clipboard");
 
     this.dataChannel.onopen = () => {
-      console.log("Data channel open");
-    };
+  console.log("Data channel open");
+
+  // 🔔 Notify desktop app that peer is ONLINE
+  if (process.send) {
+    process.send({
+      type: "PEER_ONLINE",
+      deviceId: remoteDeviceId
+    });
+  }
+};
+
 
     this.dataChannel.onmessage = (event) => {
       console.log("Received P2P message:", event.data);
