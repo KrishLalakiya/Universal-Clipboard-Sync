@@ -28,7 +28,6 @@
 
 
 
-// apps/desktop/clipboard/ClipboardWatcher.js
 const clipboardy = require('clipboardy').default;
 const EventEmitter = require('events');
 
@@ -36,32 +35,34 @@ class ClipboardWatcher extends EventEmitter {
     constructor() {
         super();
         this.lastText = '';
+        this.lastHash = '';
         this.interval = null;
-        this.clipboardy = null; // We will load it dynamically
+        this.clipboardy = null;
+        this.isWriting = false;
     }
 
     async start() {
-        // Dynamic import to handle ES Module version of clipboardy
         if (!this.clipboardy) {
             const module = await import('clipboardy');
             this.clipboardy = module.default;
         }
 
-        console.log("Clipboard Watcher Started...");
+        console.log("📋 Clipboard Watcher Started...");
         
         this.interval = setInterval(async () => {
+            // Skip if we're writing
+            if (this.isWriting) return;
+            
             try {
-                // Use the loaded instance
                 const text = await this.clipboardy.read();
                 
                 if (text && text !== this.lastText) {
-                    console.log("DETECTED CHANGE:", text);
+                    console.log("✅ DETECTED CHANGE");
                     this.lastText = text;
                     this.emit('change', text);
                 }
             } catch (e) {
-                // Suppress errors if clipboard is locked or empty
-                // console.error("Clipboard Error:", e); 
+                // Silently handle clipboard locked errors
             }
         }, 1000);
     }
@@ -72,8 +73,26 @@ class ClipboardWatcher extends EventEmitter {
              this.clipboardy = module.default;
         }
         
-        this.lastText = text; // Update local tracker to avoid loop
-        await this.clipboardy.write(text);
+        console.log("✍️ Writing to clipboard:", text.substring(0, 50));
+        
+        this.isWriting = true;
+        this.lastText = text;
+        
+        try {
+            await this.clipboardy.write(text);
+        } finally {
+            // Wait a bit, then allow monitoring again
+            setTimeout(() => {
+                this.isWriting = false;
+            }, 100);
+        }
+    }
+
+    stop() {
+        if (this.interval) {
+            clearInterval(this.interval);
+            this.interval = null;
+        }
     }
 }
 

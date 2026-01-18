@@ -69,28 +69,31 @@ app.whenReady().then(() => {
 
     // --- HANDLE MESSAGES FROM ENGINE ---
     engine.on("message", (msg) => {
-        // 1. Handle History Updates
-        // Note: Check shared/messageTypes.js to confirm if it is 'CLIPBOARD_HISTORY' or 'UPDATE_HISTORY'
-        if (msg.type === 'CLIPBOARD_HISTORY' || msg.type === 'UPDATE_HISTORY') {
-            console.log("UI Update: History received");
-            if (mainWindow) {
-                mainWindow.webContents.send("history:update", msg.history);
-            }
-        }
+        console.log("Main received from engine:", msg.type, msg);
         
-        // 2. Handle Device List Updates (You were missing this!)
-        else if (msg.type === 'DEVICE_LIST' || msg.type === 'UPDATE_DEVICES') {
-             console.log("UI Update: Devices received", msg.devices);
-             if (mainWindow) {
-                 mainWindow.webContents.send("devices:update", msg.devices);
-             }
+        if (!mainWindow) return;
+        
+        // Handle both CLIPBOARD_HISTORY and UPDATE_HISTORY
+        if (msg.type === 'CLIPBOARD_HISTORY' || msg.type === 'UPDATE_HISTORY') {
+            const historyData = msg.history || [];
+            console.log(`✅ UI Update: Sending ${historyData.length} history items`);
+            mainWindow.webContents.send("history:update", historyData);
         }
 
-        if (msg.type === 'DEVICE_LIST') { 
-         // Send to Window
-         mainWindow.webContents.send("devices:update", msg.devices);
-    }
+        // Handle device list updates
+        if (msg.type === 'DEVICE_LIST' || msg.type === 'UPDATE_DEVICES') {
+            const devicesData = msg.devices || [];
+            console.log(`✅ UI Update: Sending devices: ${devicesData.join(', ')}`);
+            mainWindow.webContents.send("devices:update", devicesData);
+        }
     });
+
+    // Request initial state after engine starts
+    setTimeout(() => {
+        if (engine) {
+            engine.send({ type: 'REQUEST_STATE' });
+        }
+    }, 1000);
 });
 
 /* =========================
@@ -112,13 +115,28 @@ ipcMain.on("ui:connect", (_, pin) => {
     }
 });
 
-// 3. Generate QR (With Local IP Logic)
+// 3. Request History (Legacy)
+ipcMain.on("ui:request-history", (event) => {
+    if (engine) {
+        engine.send({ type: 'REQUEST_STATE' });
+    }
+});
+
+// 4. Request State (Continuous Polling)
+ipcMain.on("ui:request-state", (event) => {
+    console.log("📤 UI requested state");
+    if (engine) {
+        engine.send({ type: 'REQUEST_STATE' });
+    }
+});
+
+// 5. Generate QR (With Local IP Logic)
 function getLocalIP() {
     const nets = os.networkInterfaces();
     for (const name of Object.keys(nets)) {
         for (const net of nets[name]) {
             if (net.family === 'IPv4' && !net.internal) {
-                return net.address; 
+                return net.address;
             }
         }
     }
@@ -144,6 +162,6 @@ ipcMain.handle("ui:generate-qr", async (_, dataStr) => {
 ========================= */
 app.on("window-all-closed", (e) => {
     // Keep app running in tray even if window closes
-    e.preventDefault(); 
+    e.preventDefault();
     // mainWindow = null; // Don't nullify if you want to just hide it, but standard is nullify
 });

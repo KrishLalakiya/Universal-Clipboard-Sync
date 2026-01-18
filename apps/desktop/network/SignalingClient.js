@@ -167,11 +167,13 @@ class SignalingClient extends EventEmitter {
         this.ws.on('close', () => {
             this.isConnected = false;
             console.log('WS Disconnected');
+            this.emit('disconnected');
         });
 
         this.ws.on('error', (e) => {
             this.isConnected = false;
             console.error('WS Error', e);
+            this.emit('disconnected');
         });
     }
 

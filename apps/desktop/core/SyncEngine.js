@@ -149,7 +149,11 @@
 
 const SignalingClient = require('../network/SignalingClient');
 const ClipboardWatcher = require('../clipboard/ClipboardWatcher');
+const NetworkMonitor = require('../network/NetworkMonitor');
 const { DEVICE_LIST, CLIPBOARD_HISTORY } = require('../../../shared/messageTypes');
+const fs = require('fs');
+const path = require('path');
+const os = require('os');
 
 class SyncEngine {
     constructor(deviceId, onUpdateUI) {
@@ -157,91 +161,226 @@ class SyncEngine {
         this.onUpdateUI = onUpdateUI;
         
         this.history = [];
-        this.offlineQueue = []; // <-- NEW: Store items while offline
+        this.offlineQueue = [];
         this.devices = [];
+        this.isReceivingRemote = false;
+        this.isOnline = false;
+        this.isConnecting = false;
 
-        // Initialize Modules
-        this.clipboard = new ClipboardWatcher();
+        // Offline queue storage path
+        this.queueStoragePath = path.join(os.tmpdir(), `clipboard-queue-${deviceId}.json`);
+        this.historyStoragePath = path.join(os.tmpdir(), `clipboard-history-${deviceId}.json`);
         
-        // Pass the new 'onHistoryBatch' callback
+        this.clipboard = new ClipboardWatcher();
+        this.networkMonitor = new NetworkMonitor(5000); // Check every 5 seconds
+        
         this.network = new SignalingClient({
             onClip: (text) => this.handleIncomingClip(text),
             onDeviceUpdate: (count) => this.handleDeviceUpdate(count),
             onHistoryBatch: (items) => this.handleHistoryBatch(items)
         });
 
-        // Listen for when we come back online
+        // Network monitor events
+        this.networkMonitor.on('online', () => {
+            console.log("🌐 System is online - attempting to reconnect");
+            if (!this.isOnline && !this.isConnecting) {
+                this.flushOfflineQueue();
+            }
+        });
+
+        this.networkMonitor.on('offline', () => {
+            console.log("🌐 System is offline");
+            this.isOnline = false;
+        });
+
+        // Load persisted data
+        this.loadPersistedData();
+
         this.network.on('connected', () => {
-            console.log("Back online! Flushing queue:", this.offlineQueue.length);
+            this.isOnline = true;
+            this.isConnecting = false;
+            console.log("🟢 ONLINE - Flushing offline queue");
             this.flushOfflineQueue();
         });
 
-        // Listen to Local Clipboard
+        this.network.on('disconnected', () => {
+            this.isOnline = false;
+            this.isConnecting = false;
+            console.log("🔴 OFFLINE - Queuing clipboard items");
+        });
+
         this.clipboard.on('change', (text) => {
+            // Prevent echo from remote writes
+            if (this.isReceivingRemote) {
+                this.isReceivingRemote = false;
+                return;
+            }
+
+            console.log("📋 Local Copy Detected:", text);
             this.addToHistory(text);
             
-            // Try to send. If false (offline), queue it.
             const sent = this.network.sendClip(text);
             if (!sent) {
-                console.log("Offline. Queued item:", text);
+                console.log("⏳ Offline - Queuing item");
                 this.offlineQueue.push(text);
+                this.persistQueue();
             }
         });
 
         this.clipboard.start();
+        this.networkMonitor.start();
     }
 
     connect(pin) {
-        // Connect to Port 3000
+        if (this.isConnecting) return;
+        this.isConnecting = true;
+        console.log("🔗 Attempting to connect with PIN:", pin);
         this.network.connect('ws://localhost:3000', pin, this.deviceId);
     }
 
-    // --- NEW: Sync Logic ---
+    loadPersistedData() {
+        try {
+            // Load offline queue
+            if (fs.existsSync(this.queueStoragePath)) {
+                const data = fs.readFileSync(this.queueStoragePath, 'utf8');
+                this.offlineQueue = JSON.parse(data);
+                console.log(`✅ Loaded ${this.offlineQueue.length} queued items`);
+            }
+            
+            // Load history
+            if (fs.existsSync(this.historyStoragePath)) {
+                const data = fs.readFileSync(this.historyStoragePath, 'utf8');
+                this.history = JSON.parse(data);
+                console.log(`✅ Loaded ${this.history.length} history items`);
+                // CRITICAL: Immediately send to UI
+                this.onUpdateUI('CLIPBOARD_HISTORY', this.history);
+                console.log("📤 Sent loaded history to UI");
+            } else {
+                console.log("ℹ️ No persisted history found, starting fresh");
+                // Still send empty array to initialize UI
+                this.onUpdateUI('CLIPBOARD_HISTORY', []);
+            }
+        } catch (e) {
+            console.error("❌ Error loading persisted data:", e);
+            this.onUpdateUI('CLIPBOARD_HISTORY', []);
+        }
+    }
+
+    persistQueue() {
+        try {
+            fs.writeFileSync(this.queueStoragePath, JSON.stringify(this.offlineQueue));
+        } catch (e) {
+            console.error("Error saving queue:", e);
+        }
+    }
+
+    persistHistory() {
+        try {
+            fs.writeFileSync(this.historyStoragePath, JSON.stringify(this.history));
+        } catch (e) {
+            console.error("Error saving history:", e);
+        }
+    }
 
     flushOfflineQueue() {
         if (this.offlineQueue.length === 0) return;
-
-        // Send all queued items
+        
+        console.log(`📤 Flushing ${this.offlineQueue.length} queued items...`);
+        const failed = [];
+        
         this.offlineQueue.forEach(text => {
-            this.network.sendClip(text);
+            const sent = this.network.sendClip(text);
+            if (!sent) failed.push(text);
         });
         
-        // Clear queue
-        this.offlineQueue = [];
+        this.offlineQueue = failed;
+        this.persistQueue();
+        
+        if (failed.length === 0) {
+            console.log("✅ All queued items sent");
+        } else {
+            console.log(`⚠️ ${failed.length} items still queued`);
+        }
     }
 
     handleHistoryBatch(items) {
-        console.log("Received History Batch:", items.length);
-        // Add each item to history
+        console.log("📚 Batch Received:", items.length);
         items.forEach(text => {
-            this.addToHistory(text);
+            // Avoid duplicates
+            if (!this.history.some(h => h.content === text)) {
+                this.addToHistory(text);
+            }
         });
     }
 
-    // --- Existing Logic ---
-
     handleIncomingClip(text) {
-        this.clipboard.write(text);
-        this.addToHistory(text);
+        console.log("🔄 Remote Clip Received:", text);
+        
+        // Prevent duplicate echo
+        if (this.history.length > 0 && this.history[0].content === text) {
+            console.log("⏭️ Echo prevented");
+            return;
+        }
+
+        this.isReceivingRemote = true;
+        this.clipboard.write(text).then(() => {
+            this.addToHistory(text);
+            // CRITICAL: Ensure UI knows about the update
+            this.onUpdateUI('CLIPBOARD_HISTORY', this.history);
+            this.onUpdateUI(DEVICE_LIST, this.devices);
+            setTimeout(() => { this.isReceivingRemote = false; }, 500);
+        }).catch(e => {
+            console.error("Error writing to clipboard:", e);
+            this.isReceivingRemote = false;
+        });
     }
 
     handleDeviceUpdate(count) {
         this.devices = [`${count} Device(s) Connected`];
-        this.onUpdateUI(DEVICE_LIST, this.devices); 
+        console.log(`📱 Device count: ${count}`);
+        this.onUpdateUI(DEVICE_LIST, this.devices);
+        
+        // Whenever device count changes, resend history to keep UI in sync
+        this.onUpdateUI('CLIPBOARD_HISTORY', this.history);
     }
 
     addToHistory(text) {
-        // Avoid duplicates at top
-        if (this.history[0]?.content === text) return;
+        // Skip if identical to last item
+        if (this.history.length > 0 && this.history[0].content === text) {
+            console.log("⏭️ Skipped duplicate");
+            return;
+        }
         
-        this.history.push({ id: Date.now(), content: text });
-        if (this.history.length > 50) this.history.shift();
+        const item = { 
+            id: Date.now(), 
+            content: text, 
+            timestamp: new Date().toISOString() 
+        };
+        this.history.unshift(item);
         
-        this.onUpdateUI(CLIPBOARD_HISTORY, this.history);
+        // Keep only last 50 items
+        if (this.history.length > 50) {
+            this.history.pop();
+        }
+        
+        // Update UI and persist - IMMEDIATELY
+        console.log(`📝 Added to history (${this.history.length} total) - Updating UI NOW`);
+        this.onUpdateUI('CLIPBOARD_HISTORY', this.history);
+        this.persistHistory();
+        
+        // Also force a device update to keep things in sync
+        this.onUpdateUI(DEVICE_LIST, this.devices);
     }
 
     restore(text) {
-        this.clipboard.write(text);
+        console.log("🔙 Restoring:", text);
+        this.isReceivingRemote = true;
+        this.clipboard.write(text).then(() => {
+            setTimeout(() => { this.isReceivingRemote = false; }, 300);
+        }).catch(e => {
+            console.error("Error restoring:", e);
+            this.isReceivingRemote = false;
+        });
     }
 }
 

@@ -121,8 +121,8 @@ wss.on('connection', (ws) => {
                     roomHistory[pin].push(data.payload);
                     if (roomHistory[pin].length > 20) roomHistory[pin].shift();
 
-                    // 2. Broadcast to everyone else
-                    broadcastClip(ws, data.payload);
+                    // 2. Broadcast to everyone ELSE in room (including sender for sync)
+                    broadcastClip(pin, data.payload);
                 }
             }
         } catch (e) {
@@ -138,13 +138,19 @@ wss.on('connection', (ws) => {
     });
 });
 
-function broadcastClip(sender, text) {
-    if (!sender.room || !rooms[sender.room]) return;
-    rooms[sender.room].forEach(client => {
-        if (client !== sender && client.readyState === WebSocket.OPEN) {
-            client.send(JSON.stringify({ type: CLIPBOARD_PUSH, payload: text }));
+function broadcastClip(roomPin, text) {
+    if (!rooms[roomPin]) return;
+    
+    // Send to ALL devices in room (including sender for UI sync)
+    rooms[roomPin].forEach(client => {
+        if (client.readyState === WebSocket.OPEN) {
+            client.send(JSON.stringify({ 
+                type: CLIPBOARD_PUSH, 
+                payload: text 
+            }));
         }
     });
+    console.log(`📤 Broadcast to ${rooms[roomPin].length} devices in room ${roomPin}`);
 }
 
 function broadcastDeviceCount(roomPin) {

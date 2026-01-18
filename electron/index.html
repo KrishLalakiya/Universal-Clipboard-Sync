@@ -3,88 +3,320 @@
 <head>
   <title>Universal Clipboard Sync</title>
   <style>
-    body { font-family: Arial, sans-serif; padding: 16px; }
-    h2 { margin-top: 0; }
-    ul { padding-left: 20px; }
-    li { cursor: pointer; }
+    body { 
+      font-family: Arial, sans-serif; 
+      padding: 16px; 
+      background-color: #f5f5f5;
+      margin: 0;
+    }
+    
+    h2 { 
+      margin-top: 0; 
+      color: #333;
+    }
+    
+    h3 {
+      color: #555;
+      margin-top: 15px;
+    }
+    
+    ul { 
+      padding-left: 20px; 
+      list-style: none;
+    }
+    
+    li { 
+      cursor: pointer; 
+      border-bottom: 1px solid #ddd; 
+      padding: 8px 0; 
+      color: #333;
+      transition: background-color 0.2s;
+    }
+    
+    li:hover { 
+      background-color: #e8f4f8; 
+      padding-left: 5px;
+    }
+    
+    /* Connection Box Styles */
+    .connection-box { 
+      background: #fff; 
+      padding: 15px; 
+      margin-bottom: 20px; 
+      border-radius: 8px; 
+      border: 1px solid #ddd;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    
+    input { 
+      padding: 8px; 
+      border: 1px solid #ccc; 
+      border-radius: 4px; 
+      font-size: 14px;
+      margin-right: 8px;
+    }
+    
+    button { 
+      padding: 8px 15px; 
+      background: #007bff; 
+      color: white; 
+      border: none; 
+      border-radius: 4px; 
+      cursor: pointer;
+      font-weight: bold;
+      margin-right: 5px;
+      transition: background 0.2s;
+    }
+    
+    button:hover { 
+      background: #0056b3; 
+    }
+    
+    button:active {
+      transform: scale(0.98);
+    }
+
+    /* Status Indicator */
+    .status-indicator {
+      display: inline-block;
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      margin-right: 8px;
+      animation: pulse 2s infinite;
+    }
+
+    .status-online {
+      background-color: #28a745;
+    }
+
+    .status-offline {
+      background-color: #dc3545;
+      animation: none;
+    }
+
+    .status-connecting {
+      background-color: #ffc107;
+      animation: pulse 1s infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.5; }
+    }
+
+    .status-text {
+      font-weight: bold;
+      margin-left: 5px;
+    }
+
+    .queue-status {
+      background-color: #ffe9e9;
+      padding: 8px;
+      border-radius: 4px;
+      margin-top: 10px;
+      color: #d32f2f;
+      font-size: 12px;
+      display: none;
+    }
+
+    .queue-status.show {
+      display: block;
+    }
+
+    .empty-state {
+      color: #999;
+      font-style: italic;
+      padding: 10px 0;
+    }
+
+    #qr-container {
+      margin-top: 10px;
+      text-align: center;
+    }
+
+    #qr-container img {
+      border: 2px solid #ddd;
+      border-radius: 4px;
+      padding: 5px;
+    }
   </style>
 </head>
 <body>
-  <h2>Universal Clipboard Sync</h2>
-  <p>Status: <b>Running</b></p>
+  <h2>📋 Universal Clipboard Sync</h2>
+  
+  <div class="connection-box">
+    <h3>🔌 Connection</h3>
+    <div>
+      <span class="status-indicator status-offline"></span>
+      <span class="status-text" id="status">Offline</span>
+    </div>
+    
+    <div style="margin-top: 10px;">
+      <input type="text" id="pinInput" placeholder="Enter PIN (e.g. 1234)" />
+      <button onclick="connectToRoom()">🔗 Connect</button>
+      <button onclick="toggleQR()">📱 Show QR</button>
+    </div>
+    
+    <div id="qr-container"></div>
+    <div id="queue-status" class="queue-status"></div>
+  </div>
 
-  <h3>Connected Devices</h3>
-  <ul id="devices"></ul>
+  <h3>📱 Connected Devices</h3>
+  <ul id="devices">
+      <li class="empty-state">Waiting for connection...</li>
+  </ul>
 
-  <h3>Clipboard History</h3>
-  <ul id="history"></ul>
+  <h3>📜 Clipboard History</h3>
+  <ul id="history">
+      <li class="empty-state">No clipboard history yet</li>
+  </ul>
 
   <script>
     const { ipcRenderer } = require("electron");
+    let connectionStatus = 'offline';
+    let queuedItemsCount = 0;
+    let qrVisible = false;
+
+    /* --- SETUP IPC LISTENERS FIRST (BEFORE ANYTHING ELSE) --- */
+    
+    // MUST be set up immediately, before any user action
+    ipcRenderer.on("history:update", (_, history) => {
+      console.log("📥 [LISTENER] History update received:", history?.length, "items");
+      updateHistoryUI(history);
+    });
 
     ipcRenderer.on("devices:update", (_, devices) => {
+      console.log("📱 [LISTENER] Devices update received:", devices);
+      updateDevicesUI(devices);
+    });
+
+    /* --- UPDATE HISTORY ON UI --- */
+    function updateHistoryUI(history) {
+      const ul = document.getElementById("history");
+      
+      if (!Array.isArray(history) || history.length === 0) {
+        ul.innerHTML = "<li class='empty-state'>No clipboard history yet</li>";
+        return;
+      }
+
+      ul.innerHTML = "";
+      history.forEach((item, index) => {
+        const li = document.createElement("li");
+        const text = item.content || item.text || item;
+        const timestamp = item.timestamp ? new Date(item.timestamp).toLocaleTimeString() : '';
+        
+        li.innerHTML = `<strong>#${history.length - index}</strong> ${text.substring(0, 100)} <small style="color: #999;">${timestamp}</small>`;
+        li.title = "Click to restore";
+        
+        li.onclick = () => {
+          console.log("🔙 Restoring:", text);
+          ipcRenderer.send("history:restore", text);
+        };
+        
+        ul.appendChild(li);
+      });
+    }
+
+    /* --- UPDATE DEVICES ON UI --- */
+    function updateDevicesUI(devices) {
       const ul = document.getElementById("devices");
       ul.innerHTML = "";
 
-      if (devices.length === 0) {
-        ul.innerHTML = "<li>No devices connected</li>";
+      if (!devices || devices.length === 0) {
+        ul.innerHTML = "<li class='empty-state'>No devices connected</li>";
         return;
       }
 
       devices.forEach(d => {
         const li = document.createElement("li");
-        li.textContent = d;
+        li.innerHTML = `✅ ${d}`;
         ul.appendChild(li);
       });
-    });
 
-    ipcRenderer.on("history:update", (_, history) => {
-      const ul = document.getElementById("history");
-      ul.innerHTML = "";
+      updateStatus('online');
+    }
 
-      if (history.length === 0) {
-        ul.innerHTML = "<li>No clipboard history</li>";
+    /* --- QR CODE TOGGLE --- */
+    async function toggleQR() {
+      const qrContainer = document.getElementById('qr-container');
+      
+      if (qrVisible) {
+        qrContainer.innerHTML = '';
+        qrVisible = false;
         return;
       }
 
-      history.slice().reverse().forEach(item => {
-        const li = document.createElement("li");
-        li.textContent = item.content;
-        li.onclick = () => {
-          ipcRenderer.send("history:restore", item.content);
-        };
-        ul.appendChild(li);
-      });
-    });
-  </script>
+      const pin = document.getElementById('pinInput').value || "1234";
+      const qrData = JSON.stringify({ pin: pin, action: 'join' });
+      
+      const url = await ipcRenderer.invoke("ui:generate-qr", qrData);
+      if (url) {
+        qrContainer.innerHTML = `<img src="${url}" width="150"/>`;
+        qrVisible = true;
+      }
+    }
 
+    /* --- STATUS UPDATE --- */
+    function updateStatus(status) {
+      connectionStatus = status;
+      const indicator = document.querySelector('.status-indicator');
+      const statusText = document.getElementById('status');
 
-  <div style="background: #f5f5f5; padding: 10px; margin-bottom: 20px;">
-    <h3>Connection</h3>
-    <input type="text" id="pinInput" placeholder="Enter PIN (e.g. 1234)" />
-    <button onclick="connectToRoom()">Connect</button>
-    <button onclick="showQR()">Show QR</button>
-    <div id="qr-container" style="margin-top:10px;"></div>
-</div>
+      indicator.classList.remove('status-online', 'status-offline', 'status-connecting');
+      
+      if (status === 'online') {
+        indicator.classList.add('status-online');
+        statusText.textContent = '🟢 Online';
+        document.getElementById('queue-status').classList.remove('show');
+      } else if (status === 'connecting') {
+        indicator.classList.add('status-connecting');
+        statusText.textContent = '🟡 Connecting...';
+      } else {
+        indicator.classList.add('status-offline');
+        statusText.textContent = '🔴 Offline';
+        if (queuedItemsCount > 0) {
+          document.getElementById('queue-status').textContent = `⏳ ${queuedItemsCount} item(s) queued for sync`;
+          document.getElementById('queue-status').classList.add('show');
+        }
+      }
+    }
 
-<script>
-    // ... existing ipcRenderer requires ...
-
+    /* --- USER ACTIONS --- */
     function connectToRoom() {
         const pin = document.getElementById('pinInput').value;
         if(pin) {
+            console.log("🔗 Connecting with PIN:", pin);
+            updateStatus('connecting');
             ipcRenderer.send("ui:connect", pin);
+        } else {
+            alert("Please enter a PIN");
         }
     }
 
-    async function showQR() {
-        const pin = document.getElementById('pinInput').value || "1234"; // Default or random
-        const qrData = JSON.stringify({ pin: pin, action: 'join' });
-        
-        // Use invoke for async response
-        const url = await ipcRenderer.invoke("ui:generate-qr", qrData);
-        document.getElementById('qr-container').innerHTML = `<img src="${url}" width="150"/>`;
+    /* --- CONTINUOUS POLLING FALLBACK --- */
+    function startPolling() {
+      console.log("🔄 Starting continuous polling for updates...");
+      setInterval(() => {
+        ipcRenderer.send("ui:request-state");
+      }, 2000); // Poll every 2 seconds
     }
-</script>
+
+    // Initialize
+    console.log("✅ App Initialized - Setting up listeners");
+    updateStatus('offline');
+    
+    // Request initial state
+    setTimeout(() => {
+      console.log("📤 Requesting initial state...");
+      ipcRenderer.send("ui:request-history");
+      ipcRenderer.send("ui:request-state");
+    }, 500);
+
+    // Start polling for continuous updates
+    setTimeout(() => {
+      startPolling();
+    }, 2000);
+  </script>
 </body>
 </html>

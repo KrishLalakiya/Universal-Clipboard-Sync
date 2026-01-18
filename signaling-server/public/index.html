@@ -26,35 +26,57 @@
 
     <script>
         let ws;
+        let lastReceivedText = '';
         
         function join() {
             const pin = document.getElementById('pin').value;
-            // Connect to YOUR computer's local IP (not localhost, because phone is external)
-            // Replace with your actual local IP, e.g., 192.168.1.5:8080
             const host = window.location.host; 
             ws = new WebSocket('ws://' + host);
 
             ws.onopen = () => {
-                ws.send(JSON.stringify({ type: 'JOIN_ROOM', payload: { pin, deviceId: 'Mobile' } }));
-                document.getElementById('status').innerText = "Connected!";
+                ws.send(JSON.stringify({ type: 'JOIN_ROOM', payload: { pin, deviceId: 'Mobile-' + Date.now() } }));
+                document.getElementById('status').innerText = "✅ Connected!";
                 document.getElementById('join-screen').style.display = 'none';
                 document.getElementById('sync-screen').style.display = 'block';
             };
 
-            ws.onmessage = (event) => {
+            ws.onmessage = async (event) => {
                 const msg = JSON.parse(event.data);
                 if(msg.type === 'CLIPBOARD_PUSH') {
-                    document.getElementById('clip-area').value = msg.payload;
+                    const text = msg.payload;
+                    lastReceivedText = text;
+                    document.getElementById('clip-area').value = text;
+                    
+                    // 📱 COPY TO DEVICE CLIPBOARD using Clipboard API
+                    try {
+                        await navigator.clipboard.writeText(text);
+                        console.log("📋 Copied to clipboard:", text.substring(0, 50));
+                    } catch (err) {
+                        console.error("Clipboard API failed:", err);
+                        // Fallback: at least the textarea is updated
+                    }
                 }
+            };
+            
+            ws.onerror = () => {
+                document.getElementById('status').innerText = "❌ Connection Error";
+            };
+
+            ws.onclose = () => {
+                document.getElementById('status').innerText = "🔴 Disconnected";
             };
             
             const area = document.getElementById('clip-area');
             area.addEventListener('input', () => {
-                ws.send(JSON.stringify({ type: 'CLIPBOARD_PUSH', payload: area.value }));
+                const text = area.value;
+                // Only send if different from last received (prevent echo)
+                if (text !== lastReceivedText) {
+                    ws.send(JSON.stringify({ type: 'CLIPBOARD_PUSH', payload: text }));
+                }
             });
         }
         
-        // Auto-join if PIN is in URL (e.g., ?pin=1234)
+        // Auto-join if PIN is in URL
         const urlParams = new URLSearchParams(window.location.search);
         if(urlParams.has('pin')) {
             document.getElementById('pin').value = urlParams.get('pin');

@@ -192,40 +192,59 @@
 
 
 // apps/desktop/main.js
+const path = require('path');
 const SyncEngine = require('./core/SyncEngine');
-const { CMD_CONNECT, CMD_RESTORE, UPDATE_HISTORY, UPDATE_DEVICES } = require('../../shared/messageTypes');
-const { DEVICE_LIST } = require('../../shared/messageTypes');
+
+// Ensure we import the exact strings from the shared file
+const { 
+    CMD_CONNECT, 
+    CMD_RESTORE, 
+    CLIPBOARD_HISTORY, 
+    DEVICE_LIST 
+} = require('../../shared/messageTypes');
 
 const DEVICE_ID = process.env.DEVICE_ID || 'Desktop-Client';
 
 // Helper to send messages back to parent Electron process
-const sendToParent = (type, data) => {
+const sendToParent = (type, payload) => {
     if (process.send) {
-        process.send({ type, ...data });
+        process.send({ type, ...payload });
     }
 };
 
 // Initialize Engine
 const engine = new SyncEngine(DEVICE_ID, (type, data) => {
-  if (type === DEVICE_LIST) {
-        sendToParent('DEVICE_LIST', { devices: data }); 
-        // Note: 'DEVICE_LIST' string here must match msg.type in electron/main.js
+    // Explicitly handle each type to ensure data keys are correct
+    if (type === CLIPBOARD_HISTORY) {
+        sendToParent(type, { history: data });
+    } 
+    else if (type === DEVICE_LIST) {
+        sendToParent(type, { devices: data });
     }
-    // Determine payload key based on type
-    const payload = type === UPDATE_HISTORY ? { history: data } : { devices: data };
-    sendToParent(type, payload);
 });
 
 // Listen for commands from Electron Parent
 process.on('message', (msg) => {
+    if (!msg || !msg.type) return;
+
+    console.log("🔧 Child received message type:", msg.type);
+
     switch (msg.type) {
         case CMD_CONNECT:
+            console.log("🔗 Received CMD_CONNECT:", msg.pin);
             engine.connect(msg.pin);
             break;
-        case 'RESTORE_CLIPBOARD': // Matching your existing main.js
+        case 'RESTORE_CLIPBOARD': 
+            console.log("🔙 Restoring:", msg.content);
             engine.restore(msg.content);
+            break;
+        case 'REQUEST_STATE':
+            // Send current state EVERY TIME (for continuous sync)
+            console.log("📤 [REQUEST_STATE] Sending:", engine.history.length, "history items &", engine.devices.length, "devices");
+            sendToParent('CLIPBOARD_HISTORY', { history: engine.history });
+            sendToParent('DEVICE_LIST', { devices: engine.devices });
             break;
     }
 });
 
-console.log("Child Process Started");
+console.log("✅ Child Process Started - Device:", DEVICE_ID);
