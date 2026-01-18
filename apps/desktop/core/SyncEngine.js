@@ -209,21 +209,36 @@ class SyncEngine {
             console.log("🔴 OFFLINE - Queuing clipboard items");
         });
 
-        this.clipboard.on('change', (text) => {
+        this.clipboard.on('change', (content) => {
             // Prevent echo from remote writes
             if (this.isReceivingRemote) {
                 this.isReceivingRemote = false;
                 return;
             }
 
-            console.log("📋 Local Copy Detected:", text);
-            this.addToHistory(text);
-            
-            const sent = this.network.sendClip(text);
-            if (!sent) {
-                console.log("⏳ Offline - Queuing item");
-                this.offlineQueue.push(text);
-                this.persistQueue();
+            // Handle both text and image
+            if (content.type === 'image') {
+                console.log("🖼️ Image detected, sending...");
+                // Convert buffer to base64 for transmission
+                const base64Image = content.data.toString('base64');
+                this.addToHistory({ type: 'image', data: base64Image });
+                
+                const sent = this.network.sendClip({ type: 'image', data: base64Image });
+                if (!sent) {
+                    console.log("⏳ Offline - Queuing image");
+                    this.offlineQueue.push({ type: 'image', data: base64Image });
+                    this.persistQueue();
+                }
+            } else {
+                console.log("📋 Local Copy Detected:", content.data);
+                this.addToHistory(content.data);
+                
+                const sent = this.network.sendClip(content.data);
+                if (!sent) {
+                    console.log("⏳ Offline - Queuing item");
+                    this.offlineQueue.push(content.data);
+                    this.persistQueue();
+                }
             }
         });
 
@@ -313,26 +328,44 @@ class SyncEngine {
         });
     }
 
-    handleIncomingClip(text) {
-        console.log("🔄 Remote Clip Received:", text);
+    handleIncomingClip(content) {
+        console.log("🔄 Remote Clip Received:", typeof content === 'object' ? content.type : content.substring(0, 50));
+        
+        // Handle image or text
+        let contentToCheck = typeof content === 'object' && content.type === 'image' ? content.data : content;
         
         // Prevent duplicate echo
-        if (this.history.length > 0 && this.history[0].content === text) {
+        if (this.history.length > 0 && this.history[0].content === contentToCheck) {
             console.log("⏭️ Echo prevented");
             return;
         }
 
         this.isReceivingRemote = true;
-        this.clipboard.write(text).then(() => {
-            this.addToHistory(text);
-            // CRITICAL: Ensure UI knows about the update
-            this.onUpdateUI('CLIPBOARD_HISTORY', this.history);
-            this.onUpdateUI(DEVICE_LIST, this.devices);
-            setTimeout(() => { this.isReceivingRemote = false; }, 500);
-        }).catch(e => {
-            console.error("Error writing to clipboard:", e);
-            this.isReceivingRemote = false;
-        });
+        
+        if (typeof content === 'object' && content.type === 'image') {
+            // Restore image from base64
+            const imageBuffer = Buffer.from(content.data, 'base64');
+            this.clipboard.write(imageBuffer).then(() => {
+                this.addToHistory(content);
+                this.onUpdateUI('CLIPBOARD_HISTORY', this.history);
+                this.onUpdateUI(DEVICE_LIST, this.devices);
+                setTimeout(() => { this.isReceivingRemote = false; }, 500);
+            }).catch(e => {
+                console.error("Error writing image to clipboard:", e);
+                this.isReceivingRemote = false;
+            });
+        } else {
+            // Text
+            this.clipboard.write(content).then(() => {
+                this.addToHistory(content);
+                this.onUpdateUI('CLIPBOARD_HISTORY', this.history);
+                this.onUpdateUI(DEVICE_LIST, this.devices);
+                setTimeout(() => { this.isReceivingRemote = false; }, 500);
+            }).catch(e => {
+                console.error("Error writing to clipboard:", e);
+                this.isReceivingRemote = false;
+            });
+        }
     }
 
     handleDeviceUpdate(count) {
@@ -344,18 +377,40 @@ class SyncEngine {
         this.onUpdateUI('CLIPBOARD_HISTORY', this.history);
     }
 
-    addToHistory(text) {
-        // Skip if identical to last item
-        if (this.history.length > 0 && this.history[0].content === text) {
-            console.log("⏭️ Skipped duplicate");
-            return;
+    addToHistory(content) {
+        let item;
+        
+        // Handle both image and text
+        if (typeof content === 'object' && content.type === 'image') {
+            // Image item
+            item = {
+                id: Date.now(),
+                type: 'image',
+                content: content.data, // base64 or buffer
+                timestamp: new Date().toISOString()
+            };
+            
+            // Skip if identical to last item
+            if (this.history.length > 0 && this.history[0].type === 'image' && this.history[0].content === content.data) {
+                console.log("⏭️ Skipped duplicate image");
+                return;
+            }
+        } else {
+            // Text item
+            const text = typeof content === 'object' ? content.data : content;
+            item = {
+                id: Date.now(),
+                content: text,
+                timestamp: new Date().toISOString()
+            };
+            
+            // Skip if identical to last item
+            if (this.history.length > 0 && !this.history[0].type && this.history[0].content === text) {
+                console.log("⏭️ Skipped duplicate text");
+                return;
+            }
         }
         
-        const item = { 
-            id: Date.now(), 
-            content: text, 
-            timestamp: new Date().toISOString() 
-        };
         this.history.unshift(item);
         
         // Keep only last 50 items
@@ -372,15 +427,50 @@ class SyncEngine {
         this.onUpdateUI(DEVICE_LIST, this.devices);
     }
 
-    restore(text) {
-        console.log("🔙 Restoring:", text);
+    restore(content) {
+        console.log("🔙 Restoring:", typeof content === 'object' ? content.type : typeof content === 'string' ? content.substring(0, 50) : 'unknown');
         this.isReceivingRemote = true;
-        this.clipboard.write(text).then(() => {
-            setTimeout(() => { this.isReceivingRemote = false; }, 300);
-        }).catch(e => {
-            console.error("Error restoring:", e);
-            this.isReceivingRemote = false;
-        });
+        
+        if (typeof content === 'object' && content.type === 'image') {
+            // Restore image - content.content holds the base64 data
+            const base64Data = content.content || content.data;
+            if (!base64Data) {
+                console.error("❌ Image has no data to restore");
+                this.isReceivingRemote = false;
+                return;
+            }
+            
+            const imageBuffer = Buffer.from(base64Data, 'base64');
+            this.clipboard.write(imageBuffer).then(() => {
+                setTimeout(() => { this.isReceivingRemote = false; }, 300);
+            }).catch(e => {
+                console.error("Error restoring image:", e);
+                this.isReceivingRemote = false;
+            });
+        } else {
+            // Restore text
+            const textToRestore = typeof content === 'object' ? content.content : content;
+            this.clipboard.write(textToRestore).then(() => {
+                setTimeout(() => { this.isReceivingRemote = false; }, 300);
+            }).catch(e => {
+                console.error("Error restoring:", e);
+                this.isReceivingRemote = false;
+            });
+        }
+    }
+
+    clearHistory() {
+        console.log("🗑️ Clearing all history");
+        this.history = [];
+        this.onUpdateUI('CLIPBOARD_HISTORY', this.history);
+        this.persistHistory();
+        
+        // Send clear history message to server
+        if (this.network && this.network.sendMessage) {
+            this.network.sendMessage(JSON.stringify({
+                type: 'CLEAR_HISTORY'
+            }));
+        }
     }
 }
 

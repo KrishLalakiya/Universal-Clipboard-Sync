@@ -132,7 +132,9 @@
         </div>
         <p style="font-size: 12px; color: #666;">Text copied here sends to Desktop. Text copied on Desktop appears here.</p>
         
-        <div class="section-title">📜 Clipboard History</div>
+        <div class="section-title">📜 Clipboard History
+            <button onclick="deleteAllHistory()" style="float: right; padding: 5px 10px; background: #dc3545; font-size: 12px; margin: 0;">🗑️ Delete All</button>
+        </div>
         <div class="history-container" id="history-list">
             <div class="empty-state">Loading history...</div>
         </div>
@@ -176,6 +178,26 @@
             document.getElementById('clip-area').value = '';
             showToast('🗑️ Cleared');
         }
+
+        function deleteAllHistory() {
+            if (history.length === 0) {
+                showToast('❌ No history to delete');
+                return;
+            }
+
+            if (confirm('⚠️ Are you sure you want to delete all history? This cannot be undone.')) {
+                history = [];
+                updateHistoryUI();
+                showToast('🗑️ All history deleted');
+                
+                // Send clear history message to server
+                if (ws && ws.readyState === WebSocket.OPEN) {
+                    ws.send(JSON.stringify({
+                        type: 'CLEAR_HISTORY'
+                    }));
+                }
+            }
+        }
         
         function join() {
             const pin = document.getElementById('pin').value;
@@ -198,23 +220,39 @@
                     history = msg.payload || [];
                     updateHistoryUI();
                 }
+                // Handle history cleared from another device
+                else if(msg.type === 'HISTORY_CLEARED') {
+                    console.log("🗑️ History cleared by another device");
+                    history = [];
+                    updateHistoryUI();
+                    showToast('🗑️ History cleared');
+                }
                 // Handle new clipboard items
                 else if(msg.type === 'CLIPBOARD_PUSH') {
-                    const text = msg.payload;
-                    lastReceivedText = text;
-                    document.getElementById('clip-area').value = text;
+                    const payload = msg.payload;
                     
-                    // Add to history
-                    history.unshift(text); // Add to beginning
-                    updateHistoryUI();
-                    
-                    // 📱 COPY TO DEVICE CLIPBOARD using Clipboard API
-                    try {
-                        await navigator.clipboard.writeText(text);
-                        console.log("📋 Copied to clipboard:", text.substring(0, 50));
-                    } catch (err) {
-                        console.error("Clipboard API failed:", err);
-                        // Fallback: at least the textarea is updated
+                    // Check if it's an image or text
+                    if (typeof payload === 'object' && payload.type === 'image') {
+                        console.log("🖼️ Image received");
+                        document.getElementById('clip-area').value = '[Image copied - not displayable in textarea]';
+                        history.unshift(payload);
+                        updateHistoryUI();
+                        showToast('📸 Image synced from desktop');
+                    } else {
+                        // Text
+                        lastReceivedText = payload;
+                        document.getElementById('clip-area').value = payload;
+                        history.unshift(payload);
+                        updateHistoryUI();
+                        
+                        // 📱 COPY TO DEVICE CLIPBOARD using Clipboard API
+                        try {
+                            await navigator.clipboard.writeText(payload);
+                            console.log("📋 Copied to clipboard:", payload.substring(0, 50));
+                        } catch (err) {
+                            console.error("Clipboard API failed:", err);
+                            // Fallback: at least the textarea is updated
+                        }
                     }
                 }
             };
@@ -250,21 +288,35 @@
                 const div = document.createElement('div');
                 div.className = 'history-item';
                 
-                const text = item.content || item.text || item;
-                const timestamp = item.timestamp ? new Date(item.timestamp).toLocaleTimeString() : '';
-                
-                div.innerHTML = `<strong>#${index + 1}</strong> ${text.substring(0, 100)}${text.length > 100 ? '...' : ''}<small>${timestamp}</small>`;
-                
-                div.onclick = () => {
-                    console.log("🔙 Restoring:", text);
-                    document.getElementById('clip-area').value = text;
-                    lastReceivedText = text;
+                // Check if item is image or text
+                if (typeof item === 'object' && item.type === 'image') {
+                    // Image item
+                    const timestamp = item.timestamp ? new Date(item.timestamp).toLocaleTimeString() : '';
+                    div.innerHTML = `<strong>#${index + 1}</strong> 🖼️ Image<small>${timestamp}</small>`;
+                    div.onclick = () => {
+                        console.log("🔙 Restoring image");
+                        document.getElementById('clip-area').value = '[Image - cannot display in text field]';
+                        // Note: Can't copy binary image data to clipboard via Clipboard API
+                        showToast('📸 Image item selected (text copy not available)');
+                    };
+                } else {
+                    // Text item
+                    const text = item.content || item.text || item;
+                    const timestamp = item.timestamp ? new Date(item.timestamp).toLocaleTimeString() : '';
                     
-                    // Copy to device clipboard
-                    navigator.clipboard.writeText(text).catch(err => 
-                        console.error("Clipboard API failed:", err)
-                    );
-                };
+                    div.innerHTML = `<strong>#${index + 1}</strong> ${text.substring(0, 100)}${text.length > 100 ? '...' : ''}<small>${timestamp}</small>`;
+                    
+                    div.onclick = () => {
+                        console.log("🔙 Restoring:", text);
+                        document.getElementById('clip-area').value = text;
+                        lastReceivedText = text;
+                        
+                        // Copy to device clipboard
+                        navigator.clipboard.writeText(text).catch(err => 
+                            console.error("Clipboard API failed:", err)
+                        );
+                    };
+                }
                 
                 historyList.appendChild(div);
             });

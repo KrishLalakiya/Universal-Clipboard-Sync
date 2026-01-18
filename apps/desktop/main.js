@@ -200,7 +200,8 @@ const {
     CMD_CONNECT, 
     CMD_RESTORE, 
     CLIPBOARD_HISTORY, 
-    DEVICE_LIST 
+    DEVICE_LIST,
+    CLEAR_HISTORY
 } = require('../../shared/messageTypes');
 
 const DEVICE_ID = process.env.DEVICE_ID || 'Desktop-Client';
@@ -237,6 +238,10 @@ process.on('message', (msg) => {
         case 'RESTORE_CLIPBOARD': 
             console.log("🔙 Restoring:", msg.content);
             engine.restore(msg.content);
+            break;
+        case CLEAR_HISTORY:
+            console.log("🗑️ Clearing all history");
+            engine.clearHistory();
             break;
         case 'REQUEST_STATE':
             // Send current state EVERY TIME (for continuous sync)

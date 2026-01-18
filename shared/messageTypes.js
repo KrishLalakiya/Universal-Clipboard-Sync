@@ -9,6 +9,7 @@ module.exports = {
     // Internal Process Messages (Electron <-> Child Process)
     CMD_CONNECT: 'CMD_CONNECT',
     CMD_RESTORE: 'CMD_RESTORE',
+    CLEAR_HISTORY: 'CLEAR_HISTORY',
     
     // Updates for UI
     UPDATE_HISTORY: 'CLIPBOARD_HISTORY',

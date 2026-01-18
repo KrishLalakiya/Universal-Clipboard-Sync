@@ -125,6 +125,18 @@ wss.on('connection', (ws) => {
                     broadcastClip(pin, data.payload);
                 }
             }
+
+            // --- CLEAR HISTORY ---
+            else if (data.type === 'CLEAR_HISTORY') {
+                const pin = ws.room;
+                if (pin) {
+                    console.log(`🗑️ Clearing history for room ${pin}`);
+                    roomHistory[pin] = [];
+                    
+                    // Notify all clients in the room that history was cleared
+                    broadcastClearHistory(pin);
+                }
+            }
         } catch (e) {
             console.error("Error parsing message:", e);
         }
@@ -151,6 +163,21 @@ function broadcastClip(roomPin, text) {
         }
     });
     console.log(`📤 Broadcast to ${rooms[roomPin].length} devices in room ${roomPin}`);
+}
+
+function broadcastClearHistory(roomPin) {
+    if (!rooms[roomPin]) return;
+    
+    // Notify all clients that history was cleared
+    rooms[roomPin].forEach(client => {
+        if (client.readyState === WebSocket.OPEN) {
+            client.send(JSON.stringify({ 
+                type: 'HISTORY_CLEARED',
+                payload: null
+            }));
+        }
+    });
+    console.log(`🗑️ Broadcast history cleared to ${rooms[roomPin].length} devices in room ${roomPin}`);
 }
 
 function broadcastDeviceCount(roomPin) {

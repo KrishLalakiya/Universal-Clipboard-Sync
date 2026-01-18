@@ -140,6 +140,23 @@
       border-radius: 4px;
       padding: 5px;
     }
+
+    .history-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .delete-history-btn {
+      background: #dc3545;
+      padding: 6px 12px;
+      font-size: 12px;
+      margin: 0;
+    }
+
+    .delete-history-btn:hover {
+      background: #c82333;
+    }
   </style>
 </head>
 <body>
@@ -167,7 +184,10 @@
       <li class="empty-state">Waiting for connection...</li>
   </ul>
 
-  <h3>📜 Clipboard History</h3>
+  <div class="history-header">
+    <h3 style="margin: 15px 0;">📜 Clipboard History</h3>
+    <button class="delete-history-btn" onclick="deleteAllHistory()">🗑️ Delete All</button>
+  </div>
   <ul id="history">
       <li class="empty-state">No clipboard history yet</li>
   </ul>
@@ -203,19 +223,40 @@
       ul.innerHTML = "";
       history.forEach((item, index) => {
         const li = document.createElement("li");
-        const text = item.content || item.text || item;
-        const timestamp = item.timestamp ? new Date(item.timestamp).toLocaleTimeString() : '';
         
-        li.innerHTML = `<strong>#${history.length - index}</strong> ${text.substring(0, 100)} <small style="color: #999;">${timestamp}</small>`;
-        li.title = "Click to restore";
-        
-        li.onclick = () => {
-          console.log("🔙 Restoring:", text);
-          ipcRenderer.send("history:restore", text);
-        };
+        // Handle both image and text items
+        if (typeof item === 'object' && item.type === 'image') {
+          // Image item
+          const timestamp = item.timestamp ? new Date(item.timestamp).toLocaleTimeString() : '';
+          li.innerHTML = `<strong>#${history.length - index}</strong> 🖼️ Image <small style="color: #999;">${timestamp}</small>`;
+          li.title = "Click to restore image";
+          li.onclick = () => {
+            console.log("🔙 Restoring image");
+            ipcRenderer.send("history:restore", item);
+          };
+        } else {
+          // Text item
+          const text = item.content || item.text || item;
+          const timestamp = item.timestamp ? new Date(item.timestamp).toLocaleTimeString() : '';
+          li.innerHTML = `<strong>#${history.length - index}</strong> ${text.substring(0, 100)} <small style="color: #999;">${timestamp}</small>`;
+          li.title = "Click to restore";
+          li.onclick = () => {
+            console.log("🔙 Restoring:", text);
+            ipcRenderer.send("history:restore", text);
+          };
+        }
         
         ul.appendChild(li);
       });
+    }
+
+    /* --- DELETE ALL HISTORY --- */
+    function deleteAllHistory() {
+      if (confirm('⚠️ Are you sure you want to delete all clipboard history? This cannot be undone.')) {
+        ipcRenderer.send("history:clear-all");
+        const ul = document.getElementById("history");
+        ul.innerHTML = "<li class='empty-state'>No clipboard history yet</li>";
+      }
     }
 
     /* --- UPDATE DEVICES ON UI --- */
@@ -284,12 +325,17 @@
 
     /* --- USER ACTIONS --- */
     function connectToRoom() {
-        const pin = document.getElementById('pinInput').value;
+        console.log("🔗 Connect button clicked");
+        const pinInput = document.getElementById('pinInput');
+        console.log("Pin input element:", pinInput);
+        const pin = pinInput ? pinInput.value : null;
+        console.log("PIN value:", pin);
         if(pin) {
             console.log("🔗 Connecting with PIN:", pin);
             updateStatus('connecting');
             ipcRenderer.send("ui:connect", pin);
         } else {
+            console.log("No PIN entered");
             alert("Please enter a PIN");
         }
     }
@@ -305,6 +351,13 @@
     // Initialize
     console.log("✅ App Initialized - Setting up listeners");
     updateStatus('offline');
+    
+    // Allow Enter key in PIN input
+    document.getElementById('pinInput').addEventListener('keypress', function(event) {
+      if (event.key === 'Enter') {
+        connectToRoom();
+      }
+    });
     
     // Request initial state
     setTimeout(() => {

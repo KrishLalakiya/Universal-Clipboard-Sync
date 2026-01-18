@@ -130,7 +130,15 @@ ipcMain.on("ui:request-state", (event) => {
     }
 });
 
-// 5. Generate QR (With Local IP Logic)
+// 5. Clear All History
+ipcMain.on("history:clear-all", (event) => {
+    if (engine) {
+        console.log("🗑️ Clearing all clipboard history");
+        engine.send({ type: 'CLEAR_HISTORY' });
+    }
+});
+
+// 6. Generate QR (With Local IP Logic)
 function getLocalIP() {
     const nets = os.networkInterfaces();
     for (const name of Object.keys(nets)) {
