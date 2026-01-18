@@ -28,37 +28,53 @@ const signalingClient = new SignalingClient({
   },
 
   onDeviceList: (devices) => {
-    console.log("📡 Online devices:", devices);
+  console.log("📡 Online devices:", devices);
 
-    devices.forEach((deviceId) => {
-      if (deviceId === DEVICE_ID) return;
-      if (peers.has(deviceId)) return;
+  const online = new Set(devices);
 
-      console.log("🔗 Creating WebRTC peer for", deviceId);
-
-      const peer = new WebRTCManager({
-        deviceId: DEVICE_ID,
-        signalingClient
-      });
-
-      peer.onMessage = (message) => {
-        const data = JSON.parse(message);
-        if (data.type === "CLIPBOARD_ITEM") {
-          console.log("📋 Clipboard received:", data.payload.content);
-          syncEngine.onRemoteClipboardItem(data.payload);
-        }
-      };
-
-      peers.set(deviceId, peer);
-
-      // Only one side should initiate
-      if (DEVICE_ID < deviceId) {
-        setTimeout(() => {
-          peer.createPeerConnection(deviceId);
-        }, 1000);
-      }
-    });
+  // 1️⃣ REMOVE peers that went offline
+  for (const [deviceId, peer] of peers) {
+    if (!online.has(deviceId)) {
+      console.log("🧹 Removing offline peer:", deviceId);
+      try {
+        peer.dataChannel?.close();
+        peer.peerConnection?.close();
+      } catch (_) {}
+      peers.delete(deviceId);
+    }
   }
+
+  // 2️⃣ ADD peers that are newly online
+  devices.forEach((deviceId) => {
+    if (deviceId === DEVICE_ID) return;
+    if (peers.has(deviceId)) return;
+
+    console.log("🔗 Creating WebRTC peer for", deviceId);
+
+    const peer = new WebRTCManager({
+      deviceId: DEVICE_ID,
+      signalingClient
+    });
+
+    peer.onMessage = (message) => {
+      const data = JSON.parse(message);
+      if (data.type === "CLIPBOARD_ITEM") {
+        console.log("📋 Clipboard received:", data.payload.content);
+        syncEngine.onRemoteClipboardItem(data.payload);
+      }
+    };
+
+    peers.set(deviceId, peer);
+
+    // Deterministic initiator to avoid double offers
+    if (DEVICE_ID < deviceId) {
+      setTimeout(() => {
+        peer.createPeerConnection(deviceId);
+      }, 1000);
+    }
+  });
+}
+
 });
 
 // 3️⃣ SyncEngine → WebRTC (broadcast)
@@ -66,14 +82,17 @@ syncEngine.sendToOnlineDevices = (item) => {
   if (item.sourceDeviceId !== DEVICE_ID) return;
 
   for (const [deviceId, peer] of peers) {
-    peer.sendMessage(
-      JSON.stringify({
-        type: "CLIPBOARD_ITEM",
-        payload: item
-      })
-    );
+    if (peer.dataChannel?.readyState === "open") {
+      peer.sendMessage(
+        JSON.stringify({
+          type: "CLIPBOARD_ITEM",
+          payload: item
+        })
+      );
+    }
   }
 };
+
 
 // 4️⃣ Clipboard watcher
 const clipboardWatcher = new ClipboardWatcher((text) => {

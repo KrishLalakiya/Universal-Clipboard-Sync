@@ -1,5 +1,3 @@
-// signaling-server/index.js
-
 const WebSocket = require("ws");
 
 const wss = new WebSocket.Server({ port: 8080 });
@@ -9,30 +7,44 @@ const clients = new Map();
 
 console.log("Signaling server running on ws://localhost:8080");
 
+function broadcastDeviceList() {
+  const devices = Array.from(clients.keys());
+
+  for (const ws of clients.values()) {
+    ws.send(
+      JSON.stringify({
+        type: "DEVICE_LIST",
+        devices
+      })
+    );
+  }
+}
+
 wss.on("connection", (ws) => {
   let deviceId = null;
 
   ws.on("message", (message) => {
     const data = JSON.parse(message);
 
-    // Device registers itself
+    // REGISTER
     if (data.type === "REGISTER") {
       deviceId = data.deviceId;
       clients.set(deviceId, ws);
 
       console.log(`Device registered: ${deviceId}`);
+      broadcastDeviceList();
       return;
     }
 
-    // Relay signaling messages (offer / answer / ICE)
+    // SIGNAL relay
     if (data.type === "SIGNAL") {
-      const targetSocket = clients.get(data.to);
+      const target = clients.get(data.to);
 
-      if (targetSocket) {
-        targetSocket.send(
+      if (target) {
+        target.send(
           JSON.stringify({
             type: "SIGNAL",
-            from: deviceId,
+            from: data.from,
             payload: data.payload
           })
         );
@@ -44,6 +56,7 @@ wss.on("connection", (ws) => {
     if (deviceId) {
       clients.delete(deviceId);
       console.log(`Device disconnected: ${deviceId}`);
+      broadcastDeviceList();
     }
   });
 });
