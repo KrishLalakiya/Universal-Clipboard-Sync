@@ -35,6 +35,14 @@ const signalingClient = new SignalingClient({
   onDeviceList: (devices) => {
   console.log("📡 Online devices:", devices);
 
+  // 🔔 Notify Electron window if running inside Electron
+  if (process.send) {
+    process.send({
+      type: "DEVICE_LIST",
+      devices
+    });
+  }
+
   const online = new Set(devices);
 
   // 1️⃣ REMOVE peers that went offline
