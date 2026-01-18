@@ -3,7 +3,12 @@ const WebRTCManager = require("./network/WebRTCManager");
 const SyncEngine = require("./core/SyncEngine");
 const ClipboardWatcher = require("./clipboard/ClipboardWatcher");
 
-const DEVICE_ID = process.argv[2];
+const DEVICE_ID =
+  process.env.DEVICE_ID ||
+  process.argv[2] ||
+  require("os").hostname();
+
+
 if (!DEVICE_ID) {
   console.error("Please pass device id");
   process.exit(1);
