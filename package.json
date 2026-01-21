@@ -4,7 +4,13 @@
   "description": "A cross-platform, peer-to-peer clipboard synchronization system that works across different operating systems and networks.",
   "main": "electron/main.js",
   "scripts": {
-    "start": "electron ."
+    "start": "electron .",
+    "dev": "electron . --dev",
+    "build": "npm run build:win && npm run build:mac && npm run build:linux",
+    "build:win": "electron-builder --win --publish never",
+    "build:mac": "electron-builder --mac --publish never",
+    "build:linux": "electron-builder --linux --publish never",
+    "build:win-portable": "electron-builder --win portable --publish never"
   },
   "repository": {
     "type": "git",
@@ -26,6 +32,79 @@
     "ws": "^8.19.0"
   },
   "devDependencies": {
-    "electron": "^40.0.0"
+    "electron": "^40.0.0",
+    "electron-builder": "^25.1.0"
+  },
+  "build": {
+    "appId": "com.universal-clipboard-sync.app",
+    "productName": "Universal Clipboard Sync",
+    "files": [
+      "electron/**/*",
+      "apps/**/*",
+      "shared/**/*",
+      "node_modules/**/*"
+    ],
+    "directories": {
+      "buildResources": "assets"
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64",
+            "ia32"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    },
+    "mac": {
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "category": "public.app-category.utilities",
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false
+    },
+    "dmg": {
+      "contents": [
+        {
+          "x": 110,
+          "y": 150,
+          "type": "file"
+        },
+        {
+          "x": 240,
+          "y": 150,
+          "type": "link",
+          "path": "/Applications"
+        }
+      ]
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "category": "Utility"
+    },
+    "deb": {
+      "depends": [
+        "xclip"
+      ]
+    }
   }
 }
